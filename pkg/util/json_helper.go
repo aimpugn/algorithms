@@ -680,9 +680,7 @@ func stateNul(s *scanner, c byte) int {
 ================================================================================================================
 ======================================================== null 시작
 ================================================================================================================
-*/
 
-/*
 `[1}` 또는 `5.1.2` 같은 문법 오류 발생 후의 상태
 */
 func stateError(s *scanner, c byte) int {
@@ -716,6 +714,10 @@ func quoteChar(c byte) string {
 }
 
 /*
+================================================================================================================
+======================================================== 구조체 선언
+================================================================================================================
+
 JSON 값 디코딩 중 상태값 보여주는 구조체
 */
 type decodeState struct {
@@ -740,10 +742,10 @@ type InvalidUnmarshalError struct {
 }
 
 /*
-InvalidUnmarshalError 구조체만 선언할 경우 아래와 같은 에러 발생
+` InvalidUnmarshalError ` 구조체만 선언할 경우 아래와 같은 에러 발생
 > Cannot use '&InvalidUnmarshalError{reflect.TypeOf(v)}' (type *InvalidUnmarshalError)
 > as type error Type does not implement 'error' as some methods are missing: Error() string
-왜? unmarshal(v interface{}) error 정의 보면 error를 반환하는데, InvalidUnmarshalError 구조체만으로는 반환되는 error 없기 때문
+왜? ` unmarshal(v interface{}) error{ ... } ` 함수의 정의 보면 `error`를 반환하는데, ` InvalidUnmarshalError ` 구조체만으로는 반환되는 error 없기 때문
 
 */
 func (e *InvalidUnmarshalError) Error() string {
@@ -757,8 +759,9 @@ func (e *InvalidUnmarshalError) Error() string {
 	return "json: Unmarshal(nil " + e.Type.String() + ")"
 }
 
-// An UnmarshalTypeError describes a JSON value that was
-// not appropriate for a value of a specific Go type.
+/*
+` UnmarshalTypeError ` 특정 Go 타입의 값에 적절하지 않은 JSON 값을 나타낸다
+*/
 type UnmarshalTypeError struct {
 	Value  string       // description of JSON value - "bool", "array", "number -5"
 	Type   reflect.Type // type of Go value it could not be assigned to
@@ -774,6 +777,22 @@ func (e *UnmarshalTypeError) Error() string {
 	return "json: cannot unmarshal " + e.Value + " into Go value of type " + e.Type.String()
 }
 
+const phasePanicMsg = "JSON decoder out of sync - data changing underfoot?"
+
+// Unmarshaler is the interface implemented by types that can unmarshal a JSON description of themselves.
+// The input can be assumed to be a valid encoding of
+// a JSON value. UnmarshalJSON must copy the JSON data
+// if it wishes to retain the data after returning.
+//
+// By convention, to approximate the behavior of Unmarshal itself,
+// Unmarshalers implement UnmarshalJSON([]byte("null")) as a no-op.
+/*
+` Unmarshaler `는
+*/
+type Unmarshaler interface {
+	UnmarshalJSON([]byte) error
+}
+
 func (d *decodeState) init(data []byte) *decodeState {
 	d.data = data
 	d.off = 0
@@ -787,18 +806,16 @@ func (d *decodeState) init(data []byte) *decodeState {
 
 func (d *decodeState) unmarshal(v interface{}) error {
 	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() { /* 포인터가 아니거나, nil인 경우*/
+	if rv.Kind() != reflect.Ptr || rv.IsNil() { /* 포인터가 아니거나, ` nil `인 경우*/
 		return &InvalidUnmarshalError{reflect.TypeOf(v)}
 	}
 
 	d.scan.reset()
 	d.scanWhile(scanSkipSpace) /* scanSkipSpace == 10 */
-	//
 	/*
 		Unmarshaler interface 테스트가 반드시 최상위 수준의 값에(at the top level of the value) 적용되어야 하기 때문에,
 		`rv.Elem` 아닌 `rv`를 디코드
 	*/
-
 	// err := d.value(rv)  /* JSON 값을 `v reflect.Value`로 디코딩한다 */
 	// if err != nil {
 	// 	return d.addErrorContext(err)
@@ -816,7 +833,7 @@ func (d *decodeState) scanWhile(op int) {
 	i := d.off
 
 	for i < len(data) {
-		newOp := s.step(s, data[i])
+		newOp := s.step(s, data[i]) /* 바이트 배열의 값을 다음 스텝으로 전달 */
 		i++
 		if newOp != op {
 			d.opcode = newOp
@@ -829,7 +846,7 @@ func (d *decodeState) scanWhile(op int) {
 	d.opcode = d.scan.eof()
 }
 
-// `addErrorContext`는 `decodeState.errorContext`의 정보로 새로운 향상된(enhanced) 에러를 반환
+/* `addErrorContext`는 `decodeState.errorContext`의 정보로 새로운 향상된(enhanced) 에러를 반환 */
 func (d *decodeState) addErrorContext(err error) error {
 	if d.errorContext.Struct != nil || len(d.errorContext.FieldStack) > 0 {
 		switch err := err.(type) {
@@ -841,3 +858,235 @@ func (d *decodeState) addErrorContext(err error) error {
 	}
 	return err
 }
+
+/*
+`value` 함수는 `decodeState.data[decodeState.off-1:]`의 JSON 값을 소비하하여 `v reflect.Value`로 디코딩하고, 다음 바이트를 읽어 나간다
+만약 v 값이 무효(invalid)하다면, `JSON value`는 거부된다
+`JSON value`의 첫 바이트는 이미 읽은 상태이다
+*/
+// func (d *decodeState) value(v reflect.Value) error {
+// 	switch d.opcode {
+// 	default:
+// 		panic(phasePanicMsg)
+//
+// 	case scanBeginArray:  /* 배열 파싱 */
+// 		if v.IsValid() {  /* ` v reflect.Value `가 값을 나타내는지 확인. ` zero Value `면 false 반환*/
+// 			if err := d.array(v); err != nil {
+// 				return err
+// 			}
+// 		} else {
+// 			d.skip()
+// 		}
+// 		d.scanNext()
+//
+// 	case scanBeginObject:  /* 오브젝트 파싱 */
+// 		if v.IsValid() {
+// 			if err := d.object(v); err != nil {
+// 				return err
+// 			}
+// 		} else {
+// 			d.skip()
+// 		}
+// 		d.scanNext()
+//
+// 	case scanBeginLiteral:  /* 문자열 파싱 */
+// 		// All bytes inside literal return scanContinue op code.
+// 		start := d.readIndex()
+// 		d.rescanLiteral()
+//
+// 		if v.IsValid() {
+// 			if err := d.literalStore(d.data[start:d.readIndex()], v, false); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	}
+// 	return nil
+// }
+//
+// /*
+// ` array ` 함수는 ` decodeState.data[decodeState.off-1:] `의 배열을 소비하여 ` v reflect.Value `로 디코딩한다
+// 배열의 첫 바이트 `[`는 이미 읽힌 상태이다
+// 1. ` scanWhile ` 함수에서 ` decodeState.data[i] `의 바이트 읽어서 배열/오브젝트/문자열/음수/숫자/true/false/null 여부인지 판단하여
+// 2. ` stateBeginValue `에서 이상 없으면 해당하는 ` opcode(operation code) ` 반환
+// 3. 배열인 경우 ` value > scanBeginArray > array `로 이동
+// */
+// func (d *decodeState) array(v reflect.Value) error {
+// 	// Check for unmarshaler.
+// 	u, ut, pv := indirect(v, false)
+// 	if u != nil {
+// 		start := d.readIndex()
+// 		d.skip()
+// 		return u.UnmarshalJSON(d.data[start:d.off])
+// 	}
+// 	if ut != nil {
+// 		d.saveError(&UnmarshalTypeError{Value: "array", Type: v.Type(), Offset: int64(d.off)})
+// 		d.skip()
+// 		return nil
+// 	}
+// 	v = pv
+//
+// 	// Check type of target.
+// 	switch v.Kind() {
+// 	case reflect.Interface:
+// 		if v.NumMethod() == 0 {
+// 			// Decoding into nil interface? Switch to non-reflect code.
+// 			ai := d.arrayInterface()
+// 			v.Set(reflect.ValueOf(ai))
+// 			return nil
+// 		}
+// 		// Otherwise it's invalid.
+// 		fallthrough
+// 	default:
+// 		d.saveError(&UnmarshalTypeError{Value: "array", Type: v.Type(), Offset: int64(d.off)})
+// 		d.skip()
+// 		return nil
+// 	case reflect.Array, reflect.Slice:
+// 		break
+// 	}
+//
+// 	i := 0
+// 	for {
+// 		// Look ahead for ] - can only happen on first iteration.
+// 		d.scanWhile(scanSkipSpace)
+// 		if d.opcode == scanEndArray {
+// 			break
+// 		}
+//
+// 		// Get element of array, growing if necessary.
+// 		if v.Kind() == reflect.Slice {
+// 			// Grow slice if necessary
+// 			if i >= v.Cap() {
+// 				newcap := v.Cap() + v.Cap()/2
+// 				if newcap < 4 {
+// 					newcap = 4
+// 				}
+// 				newv := reflect.MakeSlice(v.Type(), v.Len(), newcap)
+// 				reflect.Copy(newv, v)
+// 				v.Set(newv)
+// 			}
+// 			if i >= v.Len() {
+// 				v.SetLen(i + 1)
+// 			}
+// 		}
+//
+// 		if i < v.Len() {
+// 			// Decode into element.
+// 			if err := d.value(v.Index(i)); err != nil {
+// 				return err
+// 			}
+// 		} else {
+// 			// Ran out of fixed array: skip.
+// 			if err := d.value(reflect.Value{}); err != nil {
+// 				return err
+// 			}
+// 		}
+// 		i++
+//
+// 		// Next token must be , or ].
+// 		if d.opcode == scanSkipSpace {
+// 			d.scanWhile(scanSkipSpace)
+// 		}
+// 		if d.opcode == scanEndArray {
+// 			break
+// 		}
+// 		if d.opcode != scanArrayValue {
+// 			panic(phasePanicMsg)
+// 		}
+// 	}
+//
+// 	if i < v.Len() {
+// 		if v.Kind() == reflect.Array {
+// 			// Array. Zero the rest.
+// 			z := reflect.Zero(v.Type().Elem())
+// 			for ; i < v.Len(); i++ {
+// 				v.Index(i).Set(z)
+// 			}
+// 		} else {
+// 			v.SetLen(i)
+// 		}
+// 	}
+// 	if i == 0 && v.Kind() == reflect.Slice {
+// 		v.Set(reflect.MakeSlice(v.Type(), 0, 0))
+// 	}
+// 	return nil
+// }
+//
+// /*
+// ` indirect `는 non-pointer에 도달할 때까지, 필요에 따라 포인터를 할당하는 `v reflect.Value`를 따라간다
+// ` Unmarshaler `를 만나면, ` indirect `는 멈추고 ` Unmarshaler `를 반환
+// ` decodingNull `이 ` true `면, ` indirect `는 첫번째 설정 가능한 포인터에서 중지되므로 nil로 설정할 수 있다
+// */
+// func indirect(v reflect.Value, decodingNull bool) (Unmarshaler, encoding.TextUnmarshaler, reflect.Value) {
+// 	// Issue #24153 indicates that it is generally not a guaranteed property
+// 	// that you may round-trip a reflect.Value by calling Value.Addr().Elem()
+// 	// and expect the value to still be settable for values derived from
+// 	// unexported embedded struct fields.
+// 	//
+// 	// The logic below effectively does this when it first addresses the value
+// 	// (to satisfy possible pointer methods) and continues to dereference
+// 	// subsequent pointers as necessary.
+// 	//
+// 	// After the first round-trip, we set v back to the original value to
+// 	// preserve the original RW flags contained in reflect.Value.
+// 	v0 := v
+// 	haveAddr := false
+//
+// 	/*
+// 	` v reflect.Value `가 이름 있는 타입이고 메모리 주소를 지정할 수 있다면, 해당 주소에서 시작
+// 	` reflect.Value.CanAddr `: ` reflect.Value.Addr() `로 메모리 주소 얻을 수 있는지 여부 확인
+// 	*/
+// 	if v.Kind() != reflect.Ptr && v.Type().Name() != "" && v.CanAddr() {
+// 		haveAddr = true
+// 		v = v.Addr()  /* ` v reflect.Value `의 주소를 나타내는 포인터 값 반환 */
+// 	}
+// 	for {
+// 		/*
+// 		오직 ` v reflect.Value `의 타입이 ` Interface `이고 ` v reflect.Value `가 ` nil `이 아닌 경우, 인터페이스에서 값을 불러온다
+// 		*/
+// 		if v.Kind() == reflect.Interface && !v.IsNil() {
+// 			e := v.Elem()  /* ` Interface v `가 포함하는 값 또는 ` Pointer v `가 가리키는 값 */
+// 			if e.Kind() == reflect.Ptr && !e.IsNil() && (!decodingNull || e.Elem().Kind() == reflect.Ptr) {
+// 				haveAddr = false
+// 				v = e
+// 				continue
+// 			}
+// 		}
+//
+// 		if v.Kind() != reflect.Ptr {
+// 			break
+// 		}
+//
+// 		if decodingNull && v.CanSet() {
+// 			break
+// 		}
+//
+// 		// Prevent infinite loop if v is an interface pointing to its own address:
+// 		//     var v interface{}
+// 		//     v = &v
+// 		if v.Elem().Kind() == reflect.Interface && v.Elem().Elem() == v {
+// 			v = v.Elem()
+// 			break
+// 		}
+// 		if v.IsNil() {
+// 			v.Set(reflect.New(v.Type().Elem()))
+// 		}
+// 		if v.Type().NumMethod() > 0 && v.CanInterface() {
+// 			if u, ok := v.Interface().(Unmarshaler); ok {
+// 				return u, nil, reflect.Value{}
+// 			}
+// 			if !decodingNull {
+// 				if u, ok := v.Interface().(encoding.TextUnmarshaler); ok {
+// 					return nil, u, reflect.Value{}
+// 				}
+// 			}
+// 		}
+//
+// 		if haveAddr {
+// 			v = v0 // restore original value after round-trip Value.Addr().Elem()
+// 			haveAddr = false
+// 		} else {
+// 			v = v.Elem()
+// 		}
+// 	}
+// 	return nil, nil, v
+// }

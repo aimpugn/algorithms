@@ -11,11 +11,15 @@ const (
 	SortAscending
 )
 
-func RandRange(min int, max int, sizeMax int, sortType int) ([]int, int) {
+func RandRange(realRand bool, min int, max int, sizeMax int, sortType int) ([]int, int) {
 	randMap := make(map[int]bool, sizeMax)
 	randSlice := make([]int, 0, sizeMax)
 	realLen := 0
-	rand.Seed(time.Now().UnixNano())
+	if realRand {
+		rand.Seed(time.Now().UnixNano())
+	} else {
+		rand.Seed(1)
+	}
 
 loop:
 	for i := 0; i < sizeMax; i++ {
