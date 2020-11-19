@@ -31,13 +31,13 @@ func reverseStringHelper2(s *[]byte, startIdx int, targetIdx int) {
 	if lenS%2 != 0 {
 		// 문자의 수가 홀수인 경우
 		// 5 / 2 = 2, 7 / 2 = 3, 즉 중앙의 문자인 경우
-		if startIdx == lenS/2 {
+		if startIdx == lenS/2 { // <<< 같다
 			return
 		}
 	} else {
 		// 문자의 수가 짝수인 경우
 		// 4 / 2 = 2, 6 / 2 = 3
-		if startIdx >= lenS/2 {
+		if startIdx >= lenS/2 { // <<< 크거나 같다. 이 경우가 위의 `홀수 && 같다` 경우를 포함한다
 			return
 		}
 	}
