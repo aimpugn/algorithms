@@ -87,14 +87,20 @@ Memory Usage: 6.5 MB, less than 79.03% of Go online submissions for Minimum Inde
 func findRestaurant2(list1 []string, list2 []string) []string {
 	list1Len := len(list1)
 	ans := make([]string, 0, list1Len)
+	// 인덱스 저장해둘 임시 slice. `tmp`와 싱크
+	idx := make([]int, list1Len, list1Len)
+	// 레스토랑 저장해둘 임시 slice. `idx`와 싱크
 	tmp := make([]string, list1Len, list1Len)
 	tmpIdx := 0
 	leastIdx := 1000000
-	idx := make([]int, list1Len, list1Len)
+	// 첫번째 리스트든 두번째 리스트든 어느 한 쪽을 기준으로 잡고 반복
 	for idx1, restaurant1 := range list1 {
 		for idx2, restaurant2 := range list2 {
+			// 같은 레스토랑 있다면
 			if restaurant1 == restaurant2 {
+				// 현재 인덱스는 리스트1의 레스토랑과 리스트2의 레스토랑의 인덱스의 합
 				currentIdx := idx1 + idx2
+				// 더 작은 인덱스를 설정
 				leastIdx = int(math.Min(float64(currentIdx), float64(leastIdx)))
 				tmp[tmpIdx] = restaurant1
 				idx[tmpIdx] = currentIdx
